@@ -1,0 +1,145 @@
+---
+title: "ML Prediction Writeup Assignment"
+author: "Vijay Mishra"
+date: "26 February 2019"
+output: html_document
+---
+
+
+## Project Summary
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+In this project, our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website [here:](http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset). 
+
+### Data-sets
+
+The training data for this project are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+
+### Set the work environment and knitr options
+
+```{r setOptions}
+rm(list=ls(all=TRUE)) #start with empty workspace
+startTime <- Sys.time()
+library(knitr)
+opts_chunk$set(echo = TRUE, cache= TRUE, results = 'hold')
+```
+
+### Load libraries and Set Seed
+
+Libraries used, and setting seed for reproducibility.
+
+```{r libraryCalls, message=FALSE, warning=FALSE, results='hide'}
+library(caret)
+library(randomForest)
+set.seed(2019)
+```
+
+### Load and prepare the data and clean up the data
+
+```{r loadData, echo=TRUE, results='asis'}
+trainingURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testingURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainingFile <- "pml-training.csv"
+testingFile <- "pml-testing.csv"
+download.file(url=trainingURL, destfile=trainingFile,method="curl")
+download.file(url=testingURL, destfile=testingFile,method="curl")
+training <- read.csv("pml-training.csv",row.names=1,na.strings=c("NA",""))
+testing <- read.csv("pml-testing.csv",row.names=1,na.strings=c("NA",""))
+dim(training)
+dim(testing)
+```
+
+### Data Sets Partitions Definitions
+
+Create data partitions of training and validating data sets.
+
+```{r dataPartitions, echo=TRUE, results='asis'}
+inTrain = createDataPartition(training$classe, p=0.60, list=FALSE)
+trainingClean <- training[inTrain,]
+validationClean <- training[-inTrain,]
+# number of rows and columns of data in the training set
+dim(trainingClean)
+# number of rows and columns of data in the validating set
+dim(validationClean)
+```
+
+## Data Exploration and Cleaning
+
+Since we choose a random forest model and we have a data set with too many columns, first we check if we have many problems with columns without data. So, remove columns that have less than 60% of data entered.
+
+```{r cleanData, echo=TRUE, results='asis'}
+# Number of cols with less than 60% of data
+sum((colSums(!is.na(trainingClean[,-ncol(trainingClean)])) < 0.6*nrow(trainingClean)))
+# apply our definition of remove columns that most doesn't have data, before its apply to the model.
+Keep <- c((colSums(!is.na(trainingClean[,-ncol(trainingClean)])) >= 0.6*nrow(trainingClean)))
+trainingClean   <-  trainingClean[,Keep]
+validationClean <- validationClean[,Keep]
+# number of rows and columns of data in the final training set
+dim(trainingClean)
+# number of rows and columns of data in the final validating set
+dim(validationClean)
+```
+
+## Modeling
+In random forests, there is no need for cross-validation or a separate test set to get an unbiased estimate of the test set error. It is estimated internally, during the execution. So, we proceed with the training the model (Random Forest) with the training data set.
+
+```{r rfModel}
+model <- randomForest(classe~.,data=trainingClean)
+print(model)
+```
+
+### Model Evaluate
+And proceed with the verification of variable importance measures as produced by random Forest:
+
+```{r importanceVari}
+importance(model)
+```
+
+Now we evaluate our model results through confusion Matrix.
+
+```{r confusionMatrix}
+confusionMatrix(predict(model,newdata=validationClean[,-ncol(validationClean)]),validationClean$classe)
+```
+
+And confirmed the accuracy at validating data set by calculate it with the formula:
+
+```{r accuracy}
+accuracy <-c(as.numeric(predict(model,newdata=validationClean[,-ncol(validationClean)])==validationClean$classe))
+accuracy <-sum(accuracy)*100/nrow(validationClean)
+```
+
+Model Accuracy as tested over Validation set = **`r round(accuracy,1)`%**.  
+
+### Model Test
+
+Finally, we proceed with predicting the new values in the testing csv provided, first we apply the same data cleaning operations on it and coerce all columns of testing data set for the same class of previous data set. 
+
+#### Getting Testing Dataset
+
+```{r GetTestData}
+testing  <- testing [ , Keep] # Keep the same columns of testing dataset
+testing  <- testing [,-ncol(testing)] # Remove the problem ID
+# Coerce testing dataset to same class and structure of training dataset 
+testClean <- rbind(trainingClean[100, -59], testing) 
+# Apply the ID Row to row.names and 100 for dummy row from testing dataset 
+row.names(testClean) <- c(100, 1:20)
+```
+
+#### Predicting with testing dataset
+
+```{r PredictingTestingResults}
+predictions <- predict(model,newdata=testClean[-1,])
+predictions
+```
+
+```{r endtime, cache=FALSE}
+endTime <- Sys.time()
+```
+The analysis was completed on `r format(Sys.time(), "%a %b %d %X %Y")`  in `r round(difftime(endTime, startTime , units = c( "secs")),0)` seconds.
